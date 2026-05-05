@@ -11,8 +11,19 @@ from PySide6.QtWidgets import QApplication
 from client import connection as _connection
 from client import robot as _robot
 from client.values import (
-    BLACK, BLUE, Color, Direction, EAST, GREEN, NORTH,
-    ORANGE, PURPLE, RED, SOUTH, WEST, YELLOW,
+    BLACK,
+    BLUE,
+    Color,
+    Direction,
+    EAST,
+    GREEN,
+    NORTH,
+    ORANGE,
+    PURPLE,
+    RED,
+    SOUTH,
+    WEST,
+    YELLOW,
 )
 from server.app_paths import set_workspace_dir
 
@@ -70,16 +81,43 @@ class Amun:
             'run_edit_mode': self.run_edit_mode,
         }
 
+    def install(self, namespace):
+        if not isinstance(namespace, dict):
+            raise TypeError('namespace must be a dict, usually globals()')
+
+        for name, value in self._public_bindings().items():
+            namespace[name] = value
+
+        return namespace
+
     def _public_name_suggestion(self, name):
         choices = [
-            'NORTH', 'SOUTH', 'EAST', 'WEST',
-            'RED', 'ORANGE', 'YELLOW', 'GREEN', 'BLUE', 'BLACK', 'PURPLE',
-            'Direction', 'Color',
-            'move', 'walk', 'paint', 'pick_color',
-            'sense_color', 'has_color',
-            'sense_temperature', 'sense_radiation',
-            'has_wall', 'has_border_wall',
-            'reset', 'stop', 'run_edit_mode',
+            'NORTH',
+            'SOUTH',
+            'EAST',
+            'WEST',
+            'RED',
+            'ORANGE',
+            'YELLOW',
+            'GREEN',
+            'BLUE',
+            'BLACK',
+            'PURPLE',
+            'Direction',
+            'Color',
+            'move',
+            'walk',
+            'paint',
+            'pick_color',
+            'sense_color',
+            'has_color',
+            'sense_temperature',
+            'sense_radiation',
+            'has_wall',
+            'has_border_wall',
+            'reset',
+            'stop',
+            'run_edit_mode',
             'amun',
         ]
         matches = get_close_matches(str(name), choices, n=1, cutoff=0.6)
