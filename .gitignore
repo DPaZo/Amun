@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+*.lnk
+.idea/
+logs/
+amun.egg-info/
+
+worlds/.prefs
+worlds/.lang
+worlds/.last_world
+worlds/.gui_state
+worlds/.session_state
