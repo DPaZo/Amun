@@ -3,11 +3,24 @@ __pycache__/
 *.pyc
 *.lnk
 .idea/
-logs/
-amun.egg-info/
 
+logs/
 worlds/.prefs
 worlds/.lang
 worlds/.last_world
 worlds/.gui_state
 worlds/.session_state
+
+build/
+dist/
+amun.egg-info/
+
+*.c
+*.cpp
+*.pyd
+*.so
+*.dylib
+*.o
+*.obj
+*.lib
+*.exp
