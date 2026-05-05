@@ -27,8 +27,6 @@ from client.values import (
 )
 from server.app_paths import set_workspace_dir
 
-NAMED_COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'black']
-
 
 class Amun:
     def __init__(self):
@@ -53,37 +51,37 @@ class Amun:
 
     def _public_bindings(self):
         return {
-            'Direction': Direction,
-            'Color': Color,
-            'NORTH': NORTH,
-            'SOUTH': SOUTH,
-            'EAST': EAST,
-            'WEST': WEST,
-            'RED': RED,
-            'ORANGE': ORANGE,
-            'YELLOW': YELLOW,
-            'GREEN': GREEN,
-            'BLUE': BLUE,
-            'BLACK': BLACK,
-            'PURPLE': PURPLE,
-            'move': self.move,
-            'walk': self.walk,
-            'paint': self.paint,
-            'pick_color': self.pick_color,
-            'sense_color': self.sense_color,
-            'has_color': self.has_color,
-            'sense_temperature': self.sense_temperature,
-            'sense_radiation': self.sense_radiation,
-            'has_wall': self.has_wall,
-            'has_border_wall': self.has_border_wall,
-            'reset': self.reset,
-            'stop': self.stop,
-            'run_edit_mode': self.run_edit_mode,
+            "Direction": Direction,
+            "Color": Color,
+            "NORTH": NORTH,
+            "SOUTH": SOUTH,
+            "EAST": EAST,
+            "WEST": WEST,
+            "RED": RED,
+            "ORANGE": ORANGE,
+            "YELLOW": YELLOW,
+            "GREEN": GREEN,
+            "BLUE": BLUE,
+            "BLACK": BLACK,
+            "PURPLE": PURPLE,
+            "move": self.move,
+            "walk": self.walk,
+            "paint": self.paint,
+            "pick_color": self.pick_color,
+            "sense_color": self.sense_color,
+            "has_color": self.has_color,
+            "sense_temperature": self.sense_temperature,
+            "sense_radiation": self.sense_radiation,
+            "has_wall": self.has_wall,
+            "has_border_wall": self.has_border_wall,
+            "reset": self.reset,
+            "stop": self.stop,
+            "run_edit_mode": self.run_edit_mode,
         }
 
     def install(self, namespace):
         if not isinstance(namespace, dict):
-            raise TypeError('namespace must be a dict, usually globals()')
+            raise TypeError("namespace must be a dict, usually globals()")
 
         for name, value in self._public_bindings().items():
             namespace[name] = value
@@ -92,40 +90,41 @@ class Amun:
 
     def _public_name_suggestion(self, name):
         choices = [
-            'NORTH',
-            'SOUTH',
-            'EAST',
-            'WEST',
-            'RED',
-            'ORANGE',
-            'YELLOW',
-            'GREEN',
-            'BLUE',
-            'BLACK',
-            'PURPLE',
-            'Direction',
-            'Color',
-            'move',
-            'walk',
-            'paint',
-            'pick_color',
-            'sense_color',
-            'has_color',
-            'sense_temperature',
-            'sense_radiation',
-            'has_wall',
-            'has_border_wall',
-            'reset',
-            'stop',
-            'run_edit_mode',
-            'amun',
+            "NORTH",
+            "SOUTH",
+            "EAST",
+            "WEST",
+            "RED",
+            "ORANGE",
+            "YELLOW",
+            "GREEN",
+            "BLUE",
+            "BLACK",
+            "PURPLE",
+            "Direction",
+            "Color",
+            "move",
+            "walk",
+            "paint",
+            "pick_color",
+            "sense_color",
+            "has_color",
+            "sense_temperature",
+            "sense_radiation",
+            "has_wall",
+            "has_border_wall",
+            "reset",
+            "stop",
+            "run_edit_mode",
+            "amun",
         ]
         matches = get_close_matches(str(name), choices, n=1, cutoff=0.6)
         return matches[0] if matches else None
 
     def _format_program_error(self, exc):
         if isinstance(exc, NameError):
-            name = getattr(exc, 'name', None)
+            name = getattr(exc, "name", None)
+
             if not name:
                 text = str(exc)
                 parts = text.split("'")
@@ -135,19 +134,19 @@ class Amun:
             if name:
                 suggestion = self._public_name_suggestion(name)
                 if suggestion:
-                    return f'Unknown name: {name}. Did you mean {suggestion}?'
-                return f'Unknown name: {name}.'
+                    return f"Unknown name: {name}. Did you mean {suggestion}?"
+                return f"Unknown name: {name}."
 
             return str(exc)
 
         if isinstance(exc, (TypeError, RuntimeError)):
             return str(exc)
 
-        return f'{type(exc).__name__}: {exc}'
+        return f"{type(exc).__name__}: {exc}"
 
     def _prepare_workspace(self, program_func):
-        namespace = getattr(program_func, '__globals__', {}) or {}
-        module_file = namespace.get('__file__')
+        namespace = getattr(program_func, "__globals__", {}) or {}
+        module_file = namespace.get("__file__")
 
         if module_file:
             workspace = os.path.abspath(os.path.dirname(module_file))
@@ -159,11 +158,11 @@ class Amun:
 
     def _setup(self, program_func):
         if not callable(program_func):
-            raise TypeError('program_func must be callable')
+            raise TypeError("program_func must be callable")
 
-        namespace = getattr(program_func, '__globals__', None)
+        namespace = getattr(program_func, "__globals__", None)
         if namespace is None:
-            raise TypeError('program_func must be a normal Python function')
+            raise TypeError("program_func must be a normal Python function")
 
         bindings = self._public_bindings()
         missing = object()
@@ -187,7 +186,7 @@ class Amun:
         import server.server as backend
 
         try:
-            with socket.create_connection(('localhost', 8766), timeout=0.2):
+            with socket.create_connection(("localhost", 8766), timeout=0.2):
                 return False
         except OSError:
             backend.start()
@@ -202,7 +201,7 @@ class Amun:
         if created_app:
             app = QApplication(sys.argv)
             app.setQuitOnLastWindowClosed(True)
-            app.setStyle('Fusion')
+            app.setStyle("Fusion")
 
             app._signal_timer = QTimer()
             app._signal_timer.setInterval(100)
@@ -215,7 +214,6 @@ class Amun:
         self._app = app
         self._window = MainWindow(fresh_start=fresh_start)
         self._window.show()
-
         return created_app
 
     def _shutdown_runtime(self):
@@ -241,7 +239,7 @@ class Amun:
         try:
             return program_func()
         except Exception as exc:
-            print(f'[program error] {self._format_program_error(exc)}')
+            print(f"[program error] {self._format_program_error(exc)}")
         finally:
             try:
                 self.stop()
@@ -322,4 +320,85 @@ class Amun:
 
 amun = Amun()
 
-__all__ = ['Amun', 'amun']
+
+def move(direction, steps=1):
+    return amun.move(direction, steps)
+
+
+def walk(direction, steps=1):
+    return amun.walk(direction, steps)
+
+
+def paint(color=None):
+    return amun.paint(color)
+
+
+def pick_color(color):
+    return amun.pick_color(color)
+
+
+def sense_color():
+    return amun.sense_color()
+
+
+def has_color():
+    return amun.has_color()
+
+
+def sense_temperature():
+    return amun.sense_temperature()
+
+
+def sense_radiation():
+    return amun.sense_radiation()
+
+
+def has_wall(direction):
+    return amun.has_wall(direction)
+
+
+def has_border_wall(direction):
+    return amun.has_border_wall(direction)
+
+
+def reset(clear_world=False):
+    return amun.reset(clear_world)
+
+
+def stop():
+    return amun.stop()
+
+
+def run_edit_mode():
+    return amun.run_edit_mode()
+
+
+__all__ = [
+    "amun",
+    "move",
+    "walk",
+    "paint",
+    "pick_color",
+    "sense_color",
+    "has_color",
+    "sense_temperature",
+    "sense_radiation",
+    "has_wall",
+    "has_border_wall",
+    "reset",
+    "stop",
+    "run_edit_mode",
+    "Direction",
+    "Color",
+    "NORTH",
+    "SOUTH",
+    "EAST",
+    "WEST",
+    "RED",
+    "ORANGE",
+    "YELLOW",
+    "GREEN",
+    "BLUE",
+    "BLACK",
+    "PURPLE",
+]
