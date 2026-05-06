@@ -9,6 +9,7 @@ from ._globals import CELL_SIZE, robot, world
 
 SENSOR_TEXT_FONT = QFont('Segoe UI', 10)
 
+
 def _main_window():
     app = QApplication.instance()
     return getattr(app, 'mainwin', None) if app else None
@@ -150,6 +151,7 @@ class GridScene(QGraphicsScene):
         self.selected_cell = None
         self.hover_wall = None
         self.hit_wall = None
+        self._dark = False
         self.rebuild()
 
     def _cell_in_bounds(self, cell):
@@ -189,10 +191,16 @@ class GridScene(QGraphicsScene):
         if wall_x is None:
             return None
 
-        if 0 <= wall_x < world.width and 0 <= wall_y < world.height:
-            return wall_x, wall_y, wall_dir
+        if not (0 <= wall_x < world.width and 0 <= wall_y < world.height):
+            return None
 
-        return None
+        if wall_dir == 'v' and wall_x >= world.width - 1:
+            return None
+
+        if wall_dir == 'h' and wall_y >= world.height - 1:
+            return None
+
+        return wall_x, wall_y, wall_dir
 
     def _add_wall_line(self, x, y, d, pen):
         if d in ['h', 'horizontal']:
@@ -277,6 +285,8 @@ class GridScene(QGraphicsScene):
         gw._push_state_to_server()
 
     def rebuild(self):
+        gw = _main_window()
+
         items_to_remove = [item for item in self.items() if item != self.robot_item]
         for item in items_to_remove:
             self.removeItem(item)
@@ -306,7 +316,13 @@ class GridScene(QGraphicsScene):
             current_pen = border_pen if j == 0 or j == world.height else pen
             self.addLine(0, y, sw, y, current_pen)
 
+        show_all_colors = bool(gw and gw.edit_mode)
+        discovered_colors = getattr(world, 'discovered_colors', set())
+
         for (cx, cy), color in world.colors.items():
+            if not show_all_colors and (cx, cy) not in discovered_colors:
+                continue
+
             rect = QGraphicsRectItem(cx * CELL_SIZE, cy * CELL_SIZE, CELL_SIZE, CELL_SIZE)
             color_val = QColor(color) if isinstance(color, str) else color
             rect.setBrush(QBrush(color_val))
@@ -366,7 +382,6 @@ class GridScene(QGraphicsScene):
             self._add_wall_line(hx, hy, hd, hit_pen)
             self._add_crash_marker(hx, hy, hd, dark)
 
-        gw = _main_window()
         if gw and gw.edit_mode and gw.wall_builder_enabled and self.hover_wall is not None:
             wx, wy, wd = self.hover_wall
             self._add_preview_wall(wx, wy, wd, dark)
@@ -380,34 +395,27 @@ class GridScene(QGraphicsScene):
                 if rad != 0:
                     self._add_sensor_text(cx, cy, f'☢{rad}', '#43A047', 4)
         elif gw:
-            current_cell = (robot.x, robot.y)
-            if current_cell in world.temperature or current_cell in world.radiation:
-                if not hasattr(world, 'discovered_sensors'):
-                    world.discovered_sensors = set()
-                world.discovered_sensors.add(current_cell)
+            for cell in getattr(world, 'discovered_sensors', set()):
+                temp = world.temperature.get(cell, 0)
+                rad = world.radiation.get(cell, 0)
 
-            if hasattr(world, 'discovered_sensors'):
-                for cell in world.discovered_sensors:
-                    temp = world.temperature.get(cell, 0)
-                    rad = world.radiation.get(cell, 0)
+                if temp != 0:
+                    self._add_sensor_text(
+                        cell[0],
+                        cell[1],
+                        f'🌡{temp}',
+                        '#E53935',
+                        CELL_SIZE - 24,
+                    )
 
-                    if temp != 0:
-                        self._add_sensor_text(
-                            cell[0],
-                            cell[1],
-                            f'🌡{temp}',
-                            '#E53935',
-                            CELL_SIZE - 24,
-                        )
-
-                    if rad != 0:
-                        self._add_sensor_text(
-                            cell[0],
-                            cell[1],
-                            f'☢{rad}',
-                            '#43A047',
-                            4,
-                        )
+                if rad != 0:
+                    self._add_sensor_text(
+                        cell[0],
+                        cell[1],
+                        f'☢{rad}',
+                        '#43A047',
+                        4,
+                    )
 
         self.robot_item.setPos(
             robot.x * CELL_SIZE + CELL_SIZE // 2,
@@ -491,6 +499,8 @@ class GridScene(QGraphicsScene):
             else:
                 world.temperature[key] = new_value
 
+            world.discovered_sensors.discard(key)
+
             self._commit_edit_change(gw)
             return
 
@@ -514,6 +524,8 @@ class GridScene(QGraphicsScene):
             else:
                 world.radiation[key] = new_value
 
+            world.discovered_sensors.discard(key)
+
             self._commit_edit_change(gw)
             return
 
@@ -530,6 +542,8 @@ class GridScene(QGraphicsScene):
                     else 'green'
                 )
                 world.colors[key] = color_name
+
+            world.discovered_colors.discard(key)
 
             self._commit_edit_change(gw)
             return

@@ -48,6 +48,211 @@ class ThemeMixin:
             QPushButton:hover { background: #F8F9FA; }
         '''
 
+    def _apply_action_buttons_light(self):
+        if hasattr(self, '_btn_save'):
+            self._btn_save.setStyleSheet('''
+                QPushButton {
+                    background: #4285F4;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    padding: 0 16px;
+                    text-align: center;
+                }
+                QPushButton:hover { background: #1967D2; }
+                QPushButton:pressed { background: #174EA6; }
+            ''')
+
+        if hasattr(self, '_btn_load'):
+            self._btn_load.setStyleSheet('''
+                QPushButton {
+                    background: white;
+                    color: #202124;
+                    border: 1px solid #DADCE0;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    padding: 0 16px;
+                    text-align: center;
+                }
+                QPushButton:hover {
+                    background: #F8F9FA;
+                    border: 1px solid #DADCE0;
+                }
+                QPushButton:pressed { background: #F1F3F4; }
+            ''')
+
+        if hasattr(self, 'undo_btn'):
+            self.undo_btn.setStyleSheet('''
+                QPushButton {
+                    background: white;
+                    color: #202124;
+                    border: 1px solid #DADCE0;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    padding: 0 16px;
+                    text-align: center;
+                }
+                QPushButton:hover {
+                    background: #F8F9FA;
+                    border: 1px solid #DADCE0;
+                }
+                QPushButton:pressed { background: #F1F3F4; }
+                QPushButton:disabled {
+                    color: #9AA0A6;
+                    background: #F8F9FA;
+                    border: 1px solid #ECEFF1;
+                }
+            ''')
+            self.undo_btn.setIcon(qta.icon('fa5s.undo-alt', color='#5F6368'))
+
+        if hasattr(self, 'redo_btn'):
+            self.redo_btn.setStyleSheet('''
+                QPushButton {
+                    background: white;
+                    color: #202124;
+                    border: 1px solid #DADCE0;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    padding: 0 16px;
+                    text-align: center;
+                }
+                QPushButton:hover {
+                    background: #F8F9FA;
+                    border: 1px solid #DADCE0;
+                }
+                QPushButton:pressed { background: #F1F3F4; }
+                QPushButton:disabled {
+                    color: #9AA0A6;
+                    background: #F8F9FA;
+                    border: 1px solid #ECEFF1;
+                }
+            ''')
+            self.redo_btn.setIcon(qta.icon('fa5s.redo-alt', color='#5F6368'))
+
+    def _apply_action_buttons_dark(self):
+        if hasattr(self, '_btn_save'):
+            self._btn_save.setStyleSheet('''
+                QPushButton {
+                    background: #4285F4;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    padding: 0 16px;
+                    text-align: center;
+                }
+                QPushButton:hover { background: #5A95F5; }
+                QPushButton:pressed { background: #1A73E8; }
+            ''')
+
+        if hasattr(self, '_btn_load'):
+            self._btn_load.setStyleSheet('''
+                QPushButton {
+                    background: #2A2A2A;
+                    color: #E0E0E0;
+                    border: 1px solid #444444;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    padding: 0 16px;
+                    text-align: center;
+                }
+                QPushButton:hover {
+                    background: #333333;
+                    border: 1px solid #555555;
+                }
+                QPushButton:pressed { background: #1E1E1E; }
+            ''')
+
+        if hasattr(self, 'undo_btn'):
+            self.undo_btn.setStyleSheet('''
+                QPushButton {
+                    background: #2A2A2A;
+                    color: #E0E0E0;
+                    border: 1px solid #444444;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    padding: 0 16px;
+                    text-align: center;
+                }
+                QPushButton:hover {
+                    background: #333333;
+                    border: 1px solid #555555;
+                }
+                QPushButton:pressed { background: #1E1E1E; }
+                QPushButton:disabled {
+                    color: #777777;
+                    background: #1E1E1E;
+                    border: 1px solid #333333;
+                }
+            ''')
+            self.undo_btn.setIcon(qta.icon('fa5s.undo-alt', color='#E0E0E0'))
+
+        if hasattr(self, 'redo_btn'):
+            self.redo_btn.setStyleSheet('''
+                QPushButton {
+                    background: #2A2A2A;
+                    color: #E0E0E0;
+                    border: 1px solid #444444;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    padding: 0 16px;
+                    text-align: center;
+                }
+                QPushButton:hover {
+                    background: #333333;
+                    border: 1px solid #555555;
+                }
+                QPushButton:pressed { background: #1E1E1E; }
+                QPushButton:disabled {
+                    color: #777777;
+                    background: #1E1E1E;
+                    border: 1px solid #333333;
+                }
+            ''')
+            self.redo_btn.setIcon(qta.icon('fa5s.redo-alt', color='#E0E0E0'))
+
+    def _style_live_panel_toggle(self):
+        if not hasattr(self, 'live_panel_toggle_btn'):
+            return
+
+        if self.is_dark_mode:
+            self.live_panel_toggle_btn.setStyleSheet('''
+                QPushButton {
+                    background: #2A2A2A;
+                    color: #E0E0E0;
+                    border: 1px solid #444444;
+                    border-radius: 8px;
+                    font-size: 16px;
+                    font-weight: 700;
+                    padding: 0px;
+                }
+                QPushButton:hover { background: #333333; }
+                QPushButton:pressed { background: #1E1E1E; }
+            ''')
+        else:
+            self.live_panel_toggle_btn.setStyleSheet('''
+                QPushButton {
+                    background: white;
+                    color: #5F6368;
+                    border: 1px solid #DADCE0;
+                    border-radius: 8px;
+                    font-size: 16px;
+                    font-weight: 700;
+                    padding: 0px;
+                }
+                QPushButton:hover { background: #F8F9FA; }
+                QPushButton:pressed { background: #F1F3F4; }
+            ''')
+
     def apply_light_mode(self):
         self.is_dark_mode = False
 
@@ -170,6 +375,8 @@ class ThemeMixin:
             QPushButton:checked { background: #43A047; color: white; border: 1px solid #43A047; }
         ''')
 
+        self._apply_action_buttons_light()
+
         light_grid_btn = '''
             QPushButton {
                 background: white; border: 1px solid #DADCE0;
@@ -237,12 +444,17 @@ class ThemeMixin:
             }
         ''')
 
+        self._style_live_panel_toggle()
         self.update_scene()
         self._update_lang_buttons()
         if hasattr(self, '_sync_color_preview'):
             self._sync_color_preview()
+        if hasattr(self, '_update_live_panel_toggle'):
+            self._update_live_panel_toggle()
         if hasattr(self, '_refresh_runtime_widgets'):
             self._refresh_runtime_widgets()
+        if hasattr(self, '_refresh_undo_redo_buttons'):
+            self._refresh_undo_redo_buttons()
 
         save_prefs(False)
 
@@ -427,8 +639,6 @@ class ThemeMixin:
                 }
             ''')
 
-        self.update_scene()
-
         for btn in self._all_spin_buttons():
             btn.setStyleSheet(self.get_spin_button_style())
 
@@ -456,6 +666,8 @@ class ThemeMixin:
             QPushButton:checked { background: #43A047; color: white; border: 1px solid #43A047; }
         ''')
 
+        self._apply_action_buttons_dark()
+
         dark_grid_btn = '''
             QPushButton {
                 background: #2A2A2A; border: 1px solid #444444;
@@ -476,10 +688,16 @@ class ThemeMixin:
         self.h_value_label.setStyleSheet(dark_label)
         self.v_value_label.setStyleSheet(dark_label)
 
+        self._style_live_panel_toggle()
+        self.update_scene()
         self._update_lang_buttons()
         if hasattr(self, '_sync_color_preview'):
             self._sync_color_preview()
+        if hasattr(self, '_update_live_panel_toggle'):
+            self._update_live_panel_toggle()
         if hasattr(self, '_refresh_runtime_widgets'):
             self._refresh_runtime_widgets()
+        if hasattr(self, '_refresh_undo_redo_buttons'):
+            self._refresh_undo_redo_buttons()
 
         save_prefs(True)

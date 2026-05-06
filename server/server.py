@@ -11,10 +11,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import websockets
 
 from server import engine, logger, message_list
+from server.app_paths import get_worlds_dir
 from server.server_robot import Robot
 from server.world import World
-from server.app_paths import get_worlds_dir
-
 
 HOST = 'localhost'
 ROBOT_PORT = 8765
@@ -121,6 +120,35 @@ def _load_named_world(name):
     _load_world_file_by_path(world_file)
     _write_last_world_name(name)
     print(f'[server] loaded world: {name}')
+
+
+def _delete_named_world(name):
+    name = _normalize_world_name(name)
+    if not name:
+        raise ValueError('Invalid world name')
+
+    world_file = os.path.join(STATE_DIR, f'{name}.world')
+    if not os.path.exists(world_file):
+        raise FileNotFoundError(f'World not found: {name}')
+
+    os.remove(world_file)
+
+    last_path = os.path.join(STATE_DIR, '.last_world')
+    try:
+        if os.path.exists(last_path):
+            with open(last_path, 'r', encoding='utf-8') as f:
+                last_name = _normalize_world_name(f.read().strip())
+
+            if last_name == name:
+                files = _get_world_list()
+                if files:
+                    _write_last_world_name(files[0])
+                else:
+                    os.remove(last_path)
+    except OSError:
+        pass
+
+    print(f'[server] deleted world: {name}')
 
 
 def _load_world_file_by_path(path):
@@ -301,9 +329,11 @@ async def _robot_handler(websocket):
             if t == 'reset_result':
                 broadcast_to_gui({'type': 'reset_result'})
 
+            if t == 'sense_result':
+                broadcast_to_gui(response)
+
             if t in ('move_result', 'paint_result', 'sense_result', 'bool_result', 'reset_result'):
-                snap = _make_snapshot()
-                broadcast_to_gui(snap)
+                broadcast_to_gui(_make_snapshot())
 
             if t == 'stop_result':
                 broadcast_to_gui({'type': 'program_stopped'})
@@ -325,8 +355,7 @@ async def _gui_handler(websocket):
     _gui_clients.add(websocket)
     print('[server] GUI client connected')
 
-    snap = _make_snapshot()
-    await websocket.send(json.dumps(snap))
+    await websocket.send(json.dumps(_make_snapshot()))
 
     try:
         async for raw in websocket:
@@ -363,6 +392,7 @@ async def _gui_handler(websocket):
                     with _state_lock:
                         _save_world_file(name)
                     await websocket.send(json.dumps({'type': 'save_world_result', 'ok': True, 'name': name}))
+                    broadcast_to_gui({'type': 'world_list', 'files': _get_world_list()})
                 except (OSError, ValueError) as e:
                     await websocket.send(json.dumps({'type': 'error', 'message': str(e)}))
 
@@ -376,15 +406,33 @@ async def _gui_handler(websocket):
                     with _state_lock:
                         _load_named_world(name)
                         engine.clear_last_hit_wall()
-
-                    snap = _make_snapshot()
-                    broadcast_to_gui(snap)
+                    broadcast_to_gui(_make_snapshot())
                 except (OSError, ValueError) as e:
                     await websocket.send(json.dumps({'type': 'error', 'message': str(e)}))
 
             elif t == 'get_world_list':
                 files = _get_world_list()
                 await websocket.send(json.dumps({'type': 'world_list', 'files': files}))
+
+            elif t == 'delete_world':
+                name = _normalize_world_name(data.get('name') or '')
+                if not name:
+                    await websocket.send(json.dumps({'type': 'error', 'message': 'Invalid world name'}))
+                    continue
+
+                try:
+                    with _state_lock:
+                        _delete_named_world(name)
+                        files = _get_world_list()
+                    await websocket.send(json.dumps({
+                        'type': 'delete_world_result',
+                        'ok': True,
+                        'name': name,
+                        'files': files,
+                    }))
+                    broadcast_to_gui({'type': 'world_list', 'files': files})
+                except (OSError, ValueError) as e:
+                    await websocket.send(json.dumps({'type': 'error', 'message': str(e)}))
 
             elif t == 'set_edit_mode':
                 broadcast_to_gui({'type': 'set_edit_mode', 'value': bool(data.get('value', False))})

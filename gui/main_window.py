@@ -5,8 +5,8 @@ from PySide6.QtCore import QFileSystemWatcher, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QGraphicsView, QGridLayout,
-    QHBoxLayout, QLabel, QMainWindow, QScrollArea, QTextBrowser,
-    QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QScrollArea,
+    QTextBrowser, QVBoxLayout, QWidget,
 )
 
 import gui._globals as _g
@@ -37,8 +37,8 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
         QApplication.instance().mainwin = self
 
         self.setWindowTitle('Amun')
-        self.resize(1360, 1120)
-        self.setMinimumSize(900, 650)
+        self.resize(1120, 760)
+        self.setMinimumSize(640, 480)
         self.setWindowFlags(
             Qt.Window
             | Qt.CustomizeWindowHint
@@ -60,6 +60,12 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
         self._history_restoring = False
         self._pending_robot_drag_snapshot = None
         self._pending_robot_drag_position = None
+        self._saved_snapshot = None
+        self._pending_world_switch = None
+        self._mark_next_snapshot_saved = False
+        self._live_panel_hidden = False
+        self._pending_deleted_world = None
+        self._pending_next_world = None
 
         self._state_dir = os.path.join(_BASE_DIR, 'worlds')
         os.makedirs(self._state_dir, exist_ok=True)
@@ -97,16 +103,37 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
 
         content_widget = QWidget()
         content_layout = QHBoxLayout(content_widget)
-        content_layout.setContentsMargins(24, 24, 24, 24)
-        content_layout.setSpacing(24)
+        content_layout.setContentsMargins(12, 12, 12, 12)
+        content_layout.setSpacing(12)
 
         self.left_panel = self.build_left_panel()
         content_layout.addWidget(self.left_panel)
 
+        self.live_panel_toggle_btn = QPushButton('◀')
+        self.live_panel_toggle_btn.setFixedSize(28, 64)
+        self.live_panel_toggle_btn.setCursor(Qt.PointingHandCursor)
+        self.live_panel_toggle_btn.setStyleSheet(
+            '''
+            QPushButton {
+                background: white;
+                color: #5F6368;
+                border: 1px solid #DADCE0;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 700;
+                padding: 0px;
+            }
+            QPushButton:hover { background: #F8F9FA; }
+            QPushButton:pressed { background: #F1F3F4; }
+            '''
+        )
+        self.live_panel_toggle_btn.clicked.connect(self.toggle_live_panel)
+        content_layout.addWidget(self.live_panel_toggle_btn, 0, Qt.AlignVCenter)
+
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(12)
+        right_layout.setSpacing(8)
 
         self.runtime_info_bar = QWidget()
         runtime_info_layout = QHBoxLayout(self.runtime_info_bar)
@@ -141,7 +168,7 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
 
         grid_layout = QGridLayout(grid_container)
         grid_layout.setContentsMargins(0, 0, 0, 0)
-        grid_layout.setSpacing(8)
+        grid_layout.setSpacing(4)
 
         self.scene = GridScene()
         self.view = QGraphicsView(self.scene)
@@ -281,9 +308,158 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
     def on_worlds_directory_changed(self):
         self.update_world_list()
 
+    def _snapshot_signature(self, snapshot):
+        if not snapshot:
+            return None
+
+        w = snapshot.get('world') or {}
+        r = snapshot.get('robot') or {}
+
+        return {
+            'world': {
+                'width': int(w.get('width', 0)),
+                'height': int(w.get('height', 0)),
+                'walls': sorted(
+                    (int(x), int(y), str(d))
+                    for x, y, d in (w.get('walls') or [])
+                ),
+                'colors': sorted(
+                    (int(x), int(y), self._normalize_color_value(c))
+                    for x, y, c in (w.get('colors') or [])
+                ),
+                'temperature': sorted(
+                    (int(x), int(y), float(v))
+                    for x, y, v in (w.get('temperature') or [])
+                ),
+                'radiation': sorted(
+                    (int(x), int(y), float(v))
+                    for x, y, v in (w.get('radiation') or [])
+                ),
+            },
+            'robot': {
+                'x': int(r.get('x', 0)),
+                'y': int(r.get('y', 0)),
+                'direction': str(r.get('direction', 'EAST')).upper(),
+                'alive': bool(r.get('alive', True)),
+            },
+        }
+
+    def _remember_saved_snapshot(self):
+        self._saved_snapshot = self._make_snapshot()
+
+    def _has_unsaved_world_changes(self):
+        if not self.edit_mode:
+            return False
+
+        if self._saved_snapshot is None:
+            return False
+
+        return self._snapshot_signature(self._make_snapshot()) != self._snapshot_signature(self._saved_snapshot)
+
+    def _confirm_world_switch_with_unsaved_edits(self):
+        box = QMessageBox(self)
+        box.setWindowTitle(tr('unsaved_changes_title'))
+        box.setText(tr('unsaved_changes_text').format(name=self._current_world or ''))
+        box.setIcon(QMessageBox.Warning)
+        box.setStyleSheet(self._dialog_style())
+
+        save_button = box.addButton(tr('save'), QMessageBox.AcceptRole)
+        dont_save_button = box.addButton(tr('dont_save'), QMessageBox.DestructiveRole)
+        cancel_button = box.addButton(tr('cancel'), QMessageBox.RejectRole)
+        box.setDefaultButton(save_button)
+
+        box.exec()
+        clicked = box.clickedButton()
+
+        if clicked == save_button:
+            return 'save'
+        if clicked == dont_save_button:
+            return 'dont_save'
+        if clicked == cancel_button:
+            return 'cancel'
+        return 'cancel'
+
+    def _confirm_leave_edit_mode_with_unsaved_edits(self):
+        box = QMessageBox(self)
+        box.setWindowTitle(tr('unsaved_changes_title'))
+        box.setText(tr('leave_edit_mode_unsaved_text'))
+        box.setIcon(QMessageBox.Warning)
+        box.setStyleSheet(self._dialog_style())
+
+        save_button = box.addButton(tr('save'), QMessageBox.AcceptRole)
+        dont_save_button = box.addButton(tr('dont_save'), QMessageBox.DestructiveRole)
+        cancel_button = box.addButton(tr('cancel'), QMessageBox.RejectRole)
+        box.setDefaultButton(save_button)
+
+        box.exec()
+        clicked = box.clickedButton()
+
+        if clicked == save_button:
+            return 'save'
+        if clicked == dont_save_button:
+            return 'dont_save'
+        if clicked == cancel_button:
+            return 'cancel'
+        return 'cancel'
+
+    def request_world_switch(self, name):
+        name = str(name).strip()
+        current = str(getattr(self, '_current_world', '') or '').strip()
+
+        if not name:
+            self.update_world_list()
+            return
+
+        if name == current:
+            self.update_world_list()
+            return
+
+        if not self.edit_mode or not self._has_unsaved_world_changes():
+            self._pending_world_switch = None
+            self.load_world(name)
+            return
+
+        action = self._confirm_world_switch_with_unsaved_edits()
+
+        if action == 'cancel':
+            self.update_world_list()
+            return
+
+        if action == 'dont_save':
+            self._pending_world_switch = None
+            self.load_world(name)
+            return
+
+        self._pending_world_switch = name
+        started = self.save_world()
+
+        if not started:
+            self._pending_world_switch = None
+            self.update_world_list()
+
     def toggle_edit_mode(self):
         was_edit_mode = self.edit_mode
-        self.edit_mode = self.edit_toggle.isChecked()
+        next_edit_mode = self.edit_toggle.isChecked()
+
+        if was_edit_mode and not next_edit_mode and self._has_unsaved_world_changes():
+            action = self._confirm_leave_edit_mode_with_unsaved_edits()
+
+            if action == 'cancel':
+                self.edit_toggle.setChecked(True)
+                self.edit_mode = True
+                self.update_ui_for_mode()
+                self.update_scene()
+                return
+
+            if action == 'save':
+                if not self.save_world():
+                    self.edit_toggle.setChecked(True)
+                    self.edit_mode = True
+                    self.update_ui_for_mode()
+                    self.update_scene()
+                    return
+
+        self.edit_mode = next_edit_mode
         self.update_ui_for_mode()
 
         if self.edit_mode and not was_edit_mode:
@@ -309,17 +485,54 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
         self.v_minus_btn.setVisible(self.edit_mode)
         self.v_plus_btn.setVisible(self.edit_mode)
 
+        if self.edit_mode:
+            self._live_panel_hidden = False
+            if hasattr(self, 'left_panel'):
+                self.left_panel.setVisible(True)
+
+        self._update_live_panel_toggle()
+
         if hasattr(self, 'left_panel'):
             self.left_panel.updateGeometry()
 
         self._refresh_runtime_widgets()
         self._refresh_undo_redo_buttons()
 
+    def _update_live_panel_toggle(self):
+        if not hasattr(self, 'live_panel_toggle_btn'):
+            return
+
+        live_mode = not self.edit_mode
+        panel_hidden = live_mode and self._live_panel_hidden
+
+        self.live_panel_toggle_btn.setVisible(live_mode)
+
+        if hasattr(self, 'left_panel'):
+            self.left_panel.setVisible(not panel_hidden)
+
+        self.live_panel_toggle_btn.setText('▶' if panel_hidden else '◀')
+
+    def toggle_live_panel(self):
+        if self.edit_mode:
+            self._live_panel_hidden = False
+        else:
+            self._live_panel_hidden = not self._live_panel_hidden
+
+        self._update_live_panel_toggle()
+
     def toggle_paint(self, checked=None):
         if hasattr(self, 'paint_toggle'):
             self.paint_enabled = self.paint_toggle.isChecked()
         else:
             self.paint_enabled = bool(checked)
+
+        if self.paint_enabled:
+            if hasattr(self, 'temp_button'):
+                self.temp_button.setChecked(False)
+            if hasattr(self, 'rad_button'):
+                self.rad_button.setChecked(False)
+            self.temp_enabled = False
+            self.rad_enabled = False
 
         self._refresh_runtime_widgets()
 
@@ -330,6 +543,10 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
                 self.rad_button.setChecked(False)
             self.rad_enabled = False
 
+            if hasattr(self, 'paint_toggle'):
+                self.paint_toggle.setChecked(False)
+            self.paint_enabled = False
+
         self._refresh_runtime_widgets()
 
     def toggle_rad_sensor(self, checked):
@@ -338,6 +555,10 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
             if hasattr(self, 'temp_button'):
                 self.temp_button.setChecked(False)
             self.temp_enabled = False
+
+            if hasattr(self, 'paint_toggle'):
+                self.paint_toggle.setChecked(False)
+            self.paint_enabled = False
 
         self._refresh_runtime_widgets()
 
@@ -348,11 +569,26 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
     def _normalize_color_value(self, value):
         return value.name() if hasattr(value, 'name') else str(value)
 
+    def _remove_border_walls(self):
+        world.walls = {
+            (int(x), int(y), str(d))
+            for x, y, d in world.walls
+            if not (
+                    (str(d) in ('v', 'vertical') and int(x) >= world.width - 1)
+                    or (str(d) in ('h', 'horizontal') and int(y) >= world.height - 1)
+            )
+        }
+
     def _prune_world_state_to_bounds(self):
         world.walls = {
             (int(x), int(y), str(d))
             for x, y, d in world.walls
-            if 0 <= int(x) < world.width and 0 <= int(y) < world.height
+            if 0 <= int(x) < world.width
+               and 0 <= int(y) < world.height
+               and not (
+                    (str(d) in ('v', 'vertical') and int(x) >= world.width - 1)
+                    or (str(d) in ('h', 'horizontal') and int(y) >= world.height - 1)
+            )
         }
         world.colors = {
             (int(x), int(y)): self._normalize_color_value(c)
@@ -374,14 +610,20 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
             for x, y in world.discovered_sensors
             if 0 <= int(x) < world.width and 0 <= int(y) < world.height
         }
+        world.discovered_colors = {
+            (int(x), int(y))
+            for x, y in world.discovered_colors
+            if 0 <= int(x) < world.width and 0 <= int(y) < world.height
+        }
 
     def adjust_grid_dimension(self, dim, delta):
-        snapshot = self._make_snapshot()
         changed = False
+
+        self._remove_border_walls()
 
         if dim == 'h':
             old_width = world.width
-            new_width = max(5, min(30, world.width + delta))
+            new_width = max(1, min(30, world.width + delta))
             if old_width != new_width:
                 if robot.x >= new_width:
                     robot.x = new_width - 1
@@ -389,7 +631,7 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
                 changed = True
         else:
             old_height = world.height
-            new_height = max(5, min(30, world.height + delta))
+            new_height = max(1, min(30, world.height + delta))
             if old_height != new_height:
                 if robot.y >= new_height:
                     robot.y = new_height - 1
@@ -400,7 +642,6 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
             return
 
         self._prune_world_state_to_bounds()
-        self._push_undo_snapshot(snapshot)
         self.update_scene()
         self._save_local_state()
         self._push_state_to_server()
@@ -422,7 +663,7 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
             self.v_value_label.setText(f'{world.height}')
 
             self.view.setFixedSize(world.width * CELL_SIZE + 2, world.height * CELL_SIZE + 2)
-            self.h_controls.setFixedWidth(world.width * CELL_SIZE)
+            self.h_controls.setFixedWidth(max(world.width * CELL_SIZE, 152))
             self.h_controls.updateGeometry()
 
         except Exception as e:
@@ -449,39 +690,90 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
             },
         }
 
-    def _restore_snapshot(self, snapshot):
+    def _make_history_snapshot(self):
+        return {
+            'world': {
+                'walls': sorted(
+                    [int(x), int(y), str(d)]
+                    for x, y, d in world.walls
+                    if 0 <= int(x) < world.width and 0 <= int(y) < world.height
+                ),
+                'colors': sorted(
+                    [int(x), int(y), self._normalize_color_value(c)]
+                    for (x, y), c in world.colors.items()
+                    if 0 <= int(x) < world.width and 0 <= int(y) < world.height
+                ),
+                'temperature': sorted(
+                    [int(x), int(y), float(v)]
+                    for (x, y), v in world.temperature.items()
+                    if 0 <= int(x) < world.width and 0 <= int(y) < world.height
+                ),
+                'radiation': sorted(
+                    [int(x), int(y), float(v)]
+                    for (x, y), v in world.radiation.items()
+                    if 0 <= int(x) < world.width and 0 <= int(y) < world.height
+                ),
+            }
+        }
+
+    def _history_snapshot_signature(self, snapshot):
+        if not snapshot:
+            return None
+
+        w = snapshot.get('world') or {}
+        return {
+            'world': {
+                'walls': sorted(
+                    (int(x), int(y), str(d))
+                    for x, y, d in (w.get('walls') or [])
+                    if 0 <= int(x) < world.width and 0 <= int(y) < world.height
+                ),
+                'colors': sorted(
+                    (int(x), int(y), self._normalize_color_value(c))
+                    for x, y, c in (w.get('colors') or [])
+                    if 0 <= int(x) < world.width and 0 <= int(y) < world.height
+                ),
+                'temperature': sorted(
+                    (int(x), int(y), float(v))
+                    for x, y, v in (w.get('temperature') or [])
+                    if 0 <= int(x) < world.width and 0 <= int(y) < world.height
+                ),
+                'radiation': sorted(
+                    (int(x), int(y), float(v))
+                    for x, y, v in (w.get('radiation') or [])
+                    if 0 <= int(x) < world.width and 0 <= int(y) < world.height
+                ),
+            }
+        }
+
+    def _restore_history_snapshot(self, snapshot):
         if not snapshot:
             return
 
         self._history_restoring = True
         try:
             w = snapshot.get('world') or {}
-            r = snapshot.get('robot') or {}
 
-            world.width = int(w.get('width', world.width))
-            world.height = int(w.get('height', world.height))
             world.walls = {
                 (int(x), int(y), str(d))
                 for x, y, d in (w.get('walls') or [])
+                if 0 <= int(x) < world.width and 0 <= int(y) < world.height
             }
             world.colors = {
                 (int(x), int(y)): self._normalize_color_value(c)
                 for x, y, c in (w.get('colors') or [])
+                if 0 <= int(x) < world.width and 0 <= int(y) < world.height
             }
             world.temperature = {
                 (int(x), int(y)): float(v)
                 for x, y, v in (w.get('temperature') or [])
+                if 0 <= int(x) < world.width and 0 <= int(y) < world.height
             }
             world.radiation = {
                 (int(x), int(y)): float(v)
                 for x, y, v in (w.get('radiation') or [])
+                if 0 <= int(x) < world.width and 0 <= int(y) < world.height
             }
-            world.discovered_sensors.clear()
-
-            robot.x = int(r.get('x', robot.x))
-            robot.y = int(r.get('y', robot.y))
-            robot.direction = str(r.get('direction', robot.direction))
-            robot.alive = bool(r.get('alive', robot.alive))
 
             self._prune_world_state_to_bounds()
         finally:
@@ -494,11 +786,17 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
         self._refresh_undo_redo_buttons()
 
     def _push_undo_snapshot(self, snapshot=None):
-        if self._history_restoring:
+        if self._history_restoring or not self.edit_mode:
             return
 
         if snapshot is None:
-            snapshot = self._make_snapshot()
+            snapshot = self._make_history_snapshot()
+
+        signature = self._history_snapshot_signature(snapshot)
+        if self._undo_stack:
+            previous = self._history_snapshot_signature(self._undo_stack[-1])
+            if signature == previous:
+                return
 
         self._undo_stack.append(snapshot)
         if len(self._undo_stack) > self._history_limit:
@@ -516,26 +814,19 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
             self.redo_btn.setEnabled(can_edit_history and bool(self._redo_stack))
 
     def _begin_robot_drag_history(self):
-        if not self.edit_mode or self._history_restoring:
-            return
-
-        self._pending_robot_drag_snapshot = self._make_snapshot()
         self._pending_robot_drag_position = (robot.x, robot.y)
 
     def _end_robot_drag_history(self):
-        snapshot = self._pending_robot_drag_snapshot
         start_pos = self._pending_robot_drag_position
-
         self._pending_robot_drag_snapshot = None
         self._pending_robot_drag_position = None
 
-        if snapshot is None or start_pos is None:
+        if start_pos is None:
             return
 
         if start_pos == (robot.x, robot.y):
             return
 
-        self._push_undo_snapshot(snapshot)
         self._save_local_state()
         self._push_state_to_server()
         self._refresh_undo_redo_buttons()
@@ -546,12 +837,12 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
         if not self._undo_stack:
             return
 
-        self._redo_stack.append(self._make_snapshot())
+        self._redo_stack.append(self._make_history_snapshot())
         if len(self._redo_stack) > self._history_limit:
             self._redo_stack = self._redo_stack[-self._history_limit:]
 
         snapshot = self._undo_stack.pop()
-        self._restore_snapshot(snapshot)
+        self._restore_history_snapshot(snapshot)
 
     def redo_edit(self):
         if not self.edit_mode or getattr(self, '_program_running', False):
@@ -559,12 +850,12 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
         if not self._redo_stack:
             return
 
-        self._undo_stack.append(self._make_snapshot())
+        self._undo_stack.append(self._make_history_snapshot())
         if len(self._undo_stack) > self._history_limit:
             self._undo_stack = self._undo_stack[-self._history_limit:]
 
         snapshot = self._redo_stack.pop()
-        self._restore_snapshot(snapshot)
+        self._restore_history_snapshot(snapshot)
 
     def _tool_summary(self):
         if not self.edit_mode and getattr(self, '_program_running', False):

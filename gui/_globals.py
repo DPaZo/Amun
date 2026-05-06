@@ -18,12 +18,40 @@ class _WorldState:
         self.temperature = {}
         self.radiation = {}
         self.discovered_sensors = set()
+        self.discovered_colors = set()
 
     def add_wall(self, x, y, orientation):
-        self.walls.add((int(x), int(y), str(orientation)))
+        x = int(x)
+        y = int(y)
+        orientation = str(orientation).lower()
+
+        if not (0 <= x < self.width and 0 <= y < self.height):
+            return
+
+        if orientation in ('v', 'vertical'):
+            if x >= self.width - 1:
+                return
+            orientation = 'v'
+        elif orientation in ('h', 'horizontal'):
+            if y >= self.height - 1:
+                return
+            orientation = 'h'
+        else:
+            return
+
+        self.walls.add((x, y, orientation))
 
     def remove_wall(self, x, y, orientation):
-        self.walls.discard((int(x), int(y), str(orientation)))
+        x = int(x)
+        y = int(y)
+        orientation = str(orientation).lower()
+
+        if orientation in ('h', 'horizontal'):
+            self.walls.discard((x, y, 'h'))
+            self.walls.discard((x, y, 'horizontal'))
+        elif orientation in ('v', 'vertical'):
+            self.walls.discard((x, y, 'v'))
+            self.walls.discard((x, y, 'vertical'))
 
 
 class _RobotState:

@@ -1,6 +1,9 @@
 import os
 
-from PySide6.QtWidgets import QColorDialog, QInputDialog, QLineEdit, QMessageBox
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
+    QColorDialog, QFileDialog, QInputDialog, QLineEdit, QMessageBox, QPushButton
+)
 
 from .lang import tr
 
@@ -66,14 +69,24 @@ class PersistenceMixin:
             }
         '''
 
-    def _prompt_world_name(self, title, label):
+    def _prompt_world_name(self, title, label, value=''):
         dialog = QInputDialog(self)
         dialog.setWindowTitle(title)
         dialog.setLabelText(label)
         dialog.setTextEchoMode(QLineEdit.Normal)
+        dialog.setTextValue(str(value or ''))
         dialog.setOkButtonText(tr('ok'))
         dialog.setCancelButtonText(tr('cancel'))
         dialog.setStyleSheet(self._dialog_style())
+
+        line_edit = dialog.findChild(QLineEdit)
+        if line_edit is not None:
+            line_edit.returnPressed.connect(dialog.accept)
+
+        ok_button = dialog.findChild(QPushButton)
+        if ok_button is not None:
+            ok_button.setDefault(True)
+            ok_button.setAutoDefault(True)
 
         if dialog.exec() != QInputDialog.Accepted:
             return '', False
@@ -86,7 +99,19 @@ class PersistenceMixin:
         box.setText(tr('replace_world_text').format(name=name))
         box.setIcon(QMessageBox.Question)
         box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        box.setDefaultButton(QMessageBox.No)
+        box.setDefaultButton(QMessageBox.Yes)
+        box.setStyleSheet(self._dialog_style())
+
+        result = box.exec()
+        return result == QMessageBox.Yes
+
+    def _confirm_delete_world(self, name):
+        box = QMessageBox(self)
+        box.setWindowTitle(tr('delete_world_title'))
+        box.setText(tr('delete_world_text').format(name=name))
+        box.setIcon(QMessageBox.Warning)
+        box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        box.setDefaultButton(QMessageBox.Yes)
         box.setStyleSheet(self._dialog_style())
 
         result = box.exec()
@@ -104,49 +129,99 @@ class PersistenceMixin:
     def load_world(self, name):
         from ._globals import world
 
+        name = str(name).strip()
+        if not name:
+            return False
+
         self._current_world = name
         world.discovered_sensors.clear()
+        world.discovered_colors.clear()
 
         if hasattr(self, 'scene'):
             self.scene.hit_wall = None
 
+        self._mark_next_snapshot_saved = True
         self.send_to_server({'type': 'load_world', 'name': name})
+        return True
 
     def load_dialog(self):
-        name, ok = self._prompt_world_name(
-            tr('load_world_title'),
-            tr('world_name_label'),
-        )
-        if ok and name.strip():
-            self.load_world(name.strip())
+        dialog = QFileDialog(self, tr('load_world_title'), self._state_dir, 'World Files (*.world)')
+        dialog.setFileMode(QFileDialog.ExistingFile)
+        dialog.setViewMode(QFileDialog.Detail)
+        dialog.setStyleSheet(self._dialog_style())
+
+        if dialog.exec() != QFileDialog.Accepted:
+            return False
+
+        files = dialog.selectedFiles()
+        if not files:
+            return False
+
+        path = files[0]
+        name = os.path.splitext(os.path.basename(path))[0].strip()
+        if not name:
+            return False
+
+        self.request_world_switch(name)
+        return True
 
     def save_world(self):
         name, ok = self._prompt_world_name(
             tr('save_world_title'),
             tr('world_name_label'),
+            self._current_world or '',
         )
         if not ok:
-            return
+            return False
 
         name = name.strip()
         if not name:
-            return
+            return False
 
         world_path = os.path.join(self._state_dir, f'{name}.world')
         if os.path.exists(world_path):
             if not self._confirm_replace_world(name):
-                return
+                return False
 
         self._current_world = name
         self.send_to_server({'type': 'save_world', 'name': name})
+        return True
+
+    def delete_world(self, name):
+        name = str(name).strip()
+        if not name:
+            return False
+
+        if not self._confirm_delete_world(name):
+            return False
+
+        files = list(getattr(self, '_last_world_files', []))
+        next_name = None
+
+        if name in files:
+            index = files.index(name)
+
+            if len(files) > 1:
+                if index < len(files) - 1:
+                    next_name = files[index + 1]
+                else:
+                    next_name = files[index - 1]
+
+        self._pending_deleted_world = name
+        self._pending_next_world = next_name
+
+        self.send_to_server({'type': 'delete_world', 'name': name})
+        return True
 
     def pick_color(self):
         if not hasattr(self, 'scene'):
-            return
+            return False
 
-        color = QColorDialog.getColor(self.scene.paint_color, self)
+        current = getattr(self.scene, 'paint_color', QColor('#43A047'))
+        color = QColorDialog.getColor(current, self, tr('color'))
+
         if not color.isValid():
-            return
+            return False
 
         self.scene.paint_color = color
 
@@ -161,3 +236,5 @@ class PersistenceMixin:
                     }}
                 '''
             )
+
+        return True

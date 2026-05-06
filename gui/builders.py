@@ -69,6 +69,11 @@ SENSOR_SPIN_STYLE = '''
 '''
 
 
+class NoWheelComboBox(QComboBox):
+    def wheelEvent(self, event):
+        event.ignore()
+
+
 class BuildersMixin:
     def build_header(self):
         header = QWidget()
@@ -82,8 +87,8 @@ class BuildersMixin:
         ''')
 
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(74, 0, 74, 0)
-        layout.setSpacing(12)
+        layout.setContentsMargins(24, 0, 24, 0)
+        layout.setSpacing(10)
 
         left_container = QWidget()
         left_container.setStyleSheet(TRANSPARENT_STYLE)
@@ -290,22 +295,24 @@ class BuildersMixin:
                 font-weight: 700;
             }
             QListWidget::item {
-                padding: 8px 12px;
-                border-radius: 4px;
+                padding: 0px;
+                border: none;
                 margin: 2px 0px;
-                font-weight: 900;
+                background: transparent;
                 color: #202124;
             }
             QListWidget::item:selected {
-                background: #4285F4;
-                color: white;
+                background: transparent;
+                color: #202124;
             }
             QListWidget::item:hover {
-                background: #4285F4;
-                color: white;
+                background: transparent;
+                color: #202124;
             }
         ''')
-        self.world_list.itemClicked.connect(lambda it: self.load_world(it.text()))
+        self.world_list.itemClicked.connect(
+            lambda it: self.request_world_switch(it.data(Qt.UserRole) or it.text())
+        )
         world_layout.addWidget(self.world_list)
 
         layout.addWidget(self.world_group, 1)
@@ -388,39 +395,43 @@ class BuildersMixin:
                 font-weight: 700;
             }
             QListWidget::item {
-                padding: 8px 12px;
-                border-radius: 4px;
+                padding: 0px;
+                border: none;
                 margin: 2px 0px;
+                background: transparent;
                 font-family: {FONT_STACK};
                 font-weight: 900;
                 color: #202124;
             }
             QListWidget::item:selected {
-                background: #4285F4;
-                color: white;
+                background: transparent;
+                color: #202124;
                 font-weight: 900;
             }
             QListWidget::item:hover {
-                background: #4285F4;
-                color: white;
+                background: transparent;
+                color: #202124;
                 font-weight: 900;
             }
             QListWidget::item:hover:!selected {
-                background: #4285F4;
-                color: white;
+                background: transparent;
+                color: #202124;
                 font-weight: 900;
             }
             QListWidget::item:focus {
                 outline: none;
             }
         '''))
-        self.edit_world_list.itemClicked.connect(lambda it: self.load_world(it.text()))
+        self.edit_world_list.itemClicked.connect(
+            lambda it: self.request_world_switch(it.data(Qt.UserRole) or it.text())
+        )
         world_layout.addWidget(self.edit_world_list)
 
         return world_section
 
     def build_edit_actions_section(self):
         group = QGroupBox()
+        self.edit_actions_section = group
         group.setStyleSheet(_style('''
             QGroupBox {
                 border: 1px solid rgba(235, 237, 240, 0.8);
@@ -505,6 +516,8 @@ class BuildersMixin:
         self.undo_btn = QPushButton(tr('undo'))
         self.undo_btn.setMinimumHeight(34)
         self.undo_btn.setCursor(Qt.PointingHandCursor)
+        self.undo_btn.setIcon(qta.icon('fa5s.undo-alt', color='#5F6368'))
+        self.undo_btn.setIconSize(QSize(14, 14))
         self.undo_btn.setStyleSheet(HISTORY_BUTTON_STYLE)
         self.undo_btn.clicked.connect(self.undo_edit)
         history_layout.addWidget(self.undo_btn)
@@ -512,6 +525,8 @@ class BuildersMixin:
         self.redo_btn = QPushButton(tr('redo'))
         self.redo_btn.setMinimumHeight(34)
         self.redo_btn.setCursor(Qt.PointingHandCursor)
+        self.redo_btn.setIcon(qta.icon('fa5s.redo-alt', color='#5F6368'))
+        self.redo_btn.setIconSize(QSize(14, 14))
         self.redo_btn.setStyleSheet(HISTORY_BUTTON_STYLE)
         self.redo_btn.clicked.connect(self.redo_edit)
         history_layout.addWidget(self.redo_btn)
@@ -635,7 +650,7 @@ class BuildersMixin:
         '''))
         paint_layout.addWidget(self._lbl_preset_colors)
 
-        self.color_combo = QComboBox()
+        self.color_combo = NoWheelComboBox()
         self.color_combo.setCursor(Qt.PointingHandCursor)
         self.color_combo.setFixedHeight(36)
         self.color_combo.setStyleSheet('''
@@ -703,9 +718,6 @@ class BuildersMixin:
 
         wall_builder_layout.addLayout(row)
         layout.addWidget(wall_builder_section)
-
-        self.edit_world_selection_section = self.build_world_selection_section()
-        layout.addWidget(self.edit_world_selection_section)
 
         sensors_section = QGroupBox()
         sensors_section.setStyleSheet(_style('''
@@ -863,13 +875,17 @@ class BuildersMixin:
         rad_plus.clicked.connect(lambda: self.rad_spin.setValue(self.rad_spin.value() + 1))
         sensors_layout.addWidget(rad_row)
 
-        layout.addWidget(sensors_section)
+        self.edit_sensors_section = sensors_section
+        layout.addWidget(self.edit_sensors_section)
+
+        self.edit_world_selection_section = self.build_world_selection_section()
+        layout.addWidget(self.edit_world_selection_section)
 
         return container
 
     def build_h_controls(self):
         h_controls = QWidget()
-        h_controls.setFixedWidth(world.width * CELL_SIZE)
+        h_controls.setFixedWidth(max(world.width * CELL_SIZE, 152))
         h_controls.setStyleSheet(TRANSPARENT_STYLE)
 
         layout = QHBoxLayout(h_controls)

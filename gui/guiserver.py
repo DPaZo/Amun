@@ -3,9 +3,10 @@ import json
 import re
 import threading
 
+import qtawesome as qta
 import websockets
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QListWidgetItem
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidgetItem, QPushButton, QWidget
 
 
 class ServerMixin:
@@ -20,13 +21,77 @@ class ServerMixin:
     def _fill_world_list_widget(self, widget, files, current):
         widget.clear()
 
+        is_dark = bool(getattr(self, 'is_dark_mode', False))
+        inactive_fg = '#E8EAED' if is_dark else '#202124'
+        hover_bg = '#3A3A3A' if is_dark else '#F1F3F4'
+
         for name in files:
-            widget.addItem(QListWidgetItem(name))
+            item = QListWidgetItem('')
+            item.setData(Qt.UserRole, name)
+            item.setSizeHint(QSize(0, 34))
+            widget.addItem(item)
+
+            is_current = name == current
+
+            row = QWidget()
+            row.setCursor(Qt.PointingHandCursor)
+            row.setStyleSheet(
+                'background: #4285F4; border-radius: 6px;'
+                if is_current else
+                'background: transparent; border-radius: 6px;'
+            )
+
+            layout = QHBoxLayout(row)
+            layout.setContentsMargins(8, 0, 4, 0)
+            layout.setSpacing(6)
+
+            name_label = QLabel(name)
+            name_label.setTextFormat(Qt.PlainText)
+            name_label.setStyleSheet(
+                f'''
+                QLabel {{
+                    background: transparent;
+                    border: none;
+                    color: {"white" if is_current else inactive_fg};
+                    font-weight: 900;
+                    padding: 0 4px 0 0;
+                }}
+                '''
+            )
+            layout.addWidget(name_label, 1)
+
+            def _select_world(_event, n=name):
+                self.request_world_switch(n)
+
+            row.mousePressEvent = _select_world
+            name_label.mousePressEvent = _select_world
+
+            delete_button = QPushButton()
+            delete_button.setCursor(Qt.PointingHandCursor)
+            delete_button.setFixedSize(24, 24)
+            delete_button.setIcon(qta.icon('fa5s.trash-alt', color='#E53935'))
+            delete_button.setIconSize(QSize(12, 12))
+            delete_button.setStyleSheet('''
+                QPushButton {
+                    background: transparent;
+                    border: none;
+                    border-radius: 12px;
+                }
+                QPushButton:hover {
+                    background: rgba(229, 57, 53, 0.10);
+                }
+            ''')
+            delete_button.clicked.connect(lambda _checked=False, n=name: self.delete_world(n))
+            layout.addWidget(delete_button, 0, Qt.AlignRight)
+
+            widget.setItemWidget(item, row)
 
         if current:
-            items = widget.findItems(current, Qt.MatchExactly)
-            if items:
-                widget.setCurrentItem(items[0])
+            for index in range(widget.count()):
+                item = widget.item(index)
+                if (item.data(Qt.UserRole) or item.text()) == current:
+                    widget.setCurrentItem(item)
+                    break
 
     def _set_enabled_if_present(self, attr_name, value):
         if hasattr(self, attr_name):
@@ -84,7 +149,6 @@ class ServerMixin:
                     loop.run_until_complete(loop.shutdown_asyncgens())
                 except Exception:
                     pass
-
                 loop.close()
 
         threading.Thread(target=run, daemon=True).start()
@@ -134,7 +198,7 @@ class ServerMixin:
         self.update_scene()
 
     def _on_server_event(self, data):
-        from ._globals import world, robot
+        from ._globals import robot, world
 
         t = data.get('type')
 
@@ -209,11 +273,33 @@ class ServerMixin:
                     except Exception:
                         self.scene.hit_wall = None
 
+            if getattr(self, '_mark_next_snapshot_saved', False) or getattr(self, '_saved_snapshot', None) is None:
+                self._mark_next_snapshot_saved = False
+                if hasattr(self, '_remember_saved_snapshot'):
+                    self._remember_saved_snapshot()
+
             self.update_scene()
+            return
+
+        if t == 'sense_result':
+            sensor = str(data.get('sensor', '')).lower()
+            current_cell = (robot.x, robot.y)
+
+            if sensor == 'color':
+                world.discovered_colors.add(current_cell)
+                self.update_scene()
+                return
+
+            if sensor in ('temperature', 'radiation'):
+                world.discovered_sensors.add(current_cell)
+                self.update_scene()
+                return
+
             return
 
         if t == 'reset_result':
             world.discovered_sensors.clear()
+            world.discovered_colors.clear()
 
             if hasattr(self, 'scene'):
                 self.scene.hit_wall = None
@@ -221,8 +307,48 @@ class ServerMixin:
             self.update_scene()
             return
 
+        if t == 'save_world_result':
+            if bool(data.get('ok', False)):
+                if hasattr(self, '_remember_saved_snapshot'):
+                    self._remember_saved_snapshot()
+
+                target = getattr(self, '_pending_world_switch', None)
+                if target:
+                    self._pending_world_switch = None
+                    self.load_world(target)
+                    return
+
+            self.update_world_list()
+            return
+
+        if t == 'delete_world_result':
+            files = sorted(data.get('files') or [], key=self._natural_sort_key)
+            deleted_name = str(data.get('name') or '').strip()
+            self._last_world_files = list(files)
+
+            if deleted_name and getattr(self, '_pending_deleted_world', None) == deleted_name:
+                next_name = getattr(self, '_pending_next_world', None)
+                self._pending_deleted_world = None
+                self._pending_next_world = None
+
+                current = str(getattr(self, '_current_world', '') or '').strip()
+                if current == deleted_name:
+                    self._current_world = next_name or None
+                    if next_name:
+                        self.load_world(next_name)
+                        return
+
+            if hasattr(self, 'world_list'):
+                self._fill_world_list_widget(self.world_list, files, getattr(self, '_current_world', None))
+
+            if hasattr(self, 'edit_world_list'):
+                self._fill_world_list_widget(self.edit_world_list, files, getattr(self, '_current_world', None))
+
+            return
+
         if t == 'world_list':
             files = sorted(data.get('files') or [], key=self._natural_sort_key)
+            self._last_world_files = list(files)
             current = getattr(self, '_current_world', None)
 
             if hasattr(self, 'world_list'):
@@ -234,6 +360,15 @@ class ServerMixin:
             return
 
         if t == 'error':
+            if getattr(self, '_pending_world_switch', None) is not None:
+                self._pending_world_switch = None
+                self.update_world_list()
+
+            if getattr(self, '_pending_deleted_world', None) is not None:
+                self._pending_deleted_world = None
+                self._pending_next_world = None
+                self.update_world_list()
+
             self.setWindowTitle('Amun  |  Error!')
             self.update_scene()
             return
@@ -241,6 +376,7 @@ class ServerMixin:
         if t == 'program_started':
             self._program_running = True
             world.discovered_sensors.clear()
+            world.discovered_colors.clear()
 
             if hasattr(self, 'scene'):
                 self.scene.hit_wall = None
@@ -268,7 +404,6 @@ class ServerMixin:
             self._set_enabled_if_present('world_list', True)
             self._set_enabled_if_present('edit_world_list', True)
             self._refresh_runtime_widgets_if_needed()
-
             self.update_scene()
             return
 

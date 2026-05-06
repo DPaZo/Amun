@@ -48,8 +48,16 @@ class World:
         x = int(x)
         y = int(y)
 
-        if self.in_bounds(x, y):
-            self.walls.add((x, y, orientation))
+        if not self.in_bounds(x, y):
+            return
+
+        if orientation == 'v' and x >= self.width - 1:
+            return
+
+        if orientation == 'h' and y >= self.height - 1:
+            return
+
+        self.walls.add((x, y, orientation))
 
     def remove_wall(self, x, y, orientation):
         orientation = _normalize_orientation(orientation)
