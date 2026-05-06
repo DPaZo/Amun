@@ -440,6 +440,7 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
     def toggle_edit_mode(self):
         was_edit_mode = self.edit_mode
         next_edit_mode = self.edit_toggle.isChecked()
+        reload_current_world = False
 
         if was_edit_mode and not next_edit_mode and self._has_unsaved_world_changes():
             action = self._confirm_leave_edit_mode_with_unsaved_edits()
@@ -458,12 +459,19 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
                     self.update_ui_for_mode()
                     self.update_scene()
                     return
+            elif action == 'dont_save':
+                reload_current_world = True
 
         self.edit_mode = next_edit_mode
         self.update_ui_for_mode()
 
+        current = getattr(self, '_current_world', None)
+
+        if reload_current_world and current:
+            self.load_world(current)
+            return
+
         if self.edit_mode and not was_edit_mode:
-            current = getattr(self, '_current_world', None)
             if current:
                 self.load_world(current)
                 return

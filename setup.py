@@ -43,8 +43,8 @@ class BuildPy(_build_py):
 
 
 setup(
-    name="amun",
-    version="0.1.0",
+    name="amun-robot",
+    version="0.1.2",
     py_modules=["amun"],
     packages=find_packages(include=["client", "client.*", "server", "server.*", "gui", "gui.*"]),
     ext_modules=cythonize(

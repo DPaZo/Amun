@@ -148,7 +148,19 @@ class PersistenceMixin:
         dialog = QFileDialog(self, tr('load_world_title'), self._state_dir, 'World Files (*.world)')
         dialog.setFileMode(QFileDialog.ExistingFile)
         dialog.setViewMode(QFileDialog.Detail)
+        dialog.setOption(QFileDialog.DontUseNativeDialog, True)
         dialog.setStyleSheet(self._dialog_style())
+
+        line_edit = dialog.findChild(QLineEdit)
+        if line_edit is not None:
+            line_edit.returnPressed.connect(dialog.accept)
+
+        for button in dialog.findChildren(QPushButton):
+            text = button.text().replace('&', '').strip().lower()
+            if text in {'open', 'load', 'ok'}:
+                button.setDefault(True)
+                button.setAutoDefault(True)
+                break
 
         if dialog.exec() != QFileDialog.Accepted:
             return False

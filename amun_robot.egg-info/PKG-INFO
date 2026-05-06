@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: amun-robot
+Version: 0.1.2
+Summary: Educational robot world for learning programming in Python
+Requires-Python: >=3.10
+Requires-Dist: PySide6==6.10.2
+Requires-Dist: websockets==16.0
+Requires-Dist: qtawesome==1.4.1

@@ -6,8 +6,8 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "amun"
-version = "0.1.0"
+name = "amun-robot"
+version = "0.1.2"
 description = "Educational robot world for learning programming in Python"
 requires-python = ">=3.10"
 dependencies = [
