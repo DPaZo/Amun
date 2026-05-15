@@ -317,9 +317,14 @@ class GridScene(QGraphicsScene):
             self.addLine(0, y, sw, y, current_pen)
 
         show_all_colors = bool(gw and gw.edit_mode)
+        show_runtime_colors = not show_all_colors
         discovered_colors = getattr(world, 'discovered_colors', set())
+        runtime_colors = getattr(world, 'runtime_colors', {})
 
         for (cx, cy), color in world.colors.items():
+            if show_runtime_colors and (cx, cy) in runtime_colors:
+                continue
+
             if not show_all_colors and (cx, cy) not in discovered_colors:
                 continue
 
@@ -329,6 +334,15 @@ class GridScene(QGraphicsScene):
             rect.setOpacity(0.4)
             rect.setPen(Qt.NoPen)
             self.addItem(rect)
+
+        if show_runtime_colors:
+            for (cx, cy), color in runtime_colors.items():
+                rect = QGraphicsRectItem(cx * CELL_SIZE, cy * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                color_val = QColor(color) if isinstance(color, str) else color
+                rect.setBrush(QBrush(color_val))
+                rect.setOpacity(0.4)
+                rect.setPen(Qt.NoPen)
+                self.addItem(rect)
 
         if self._cell_in_bounds(self.selected_cell):
             sx, sy = self.selected_cell

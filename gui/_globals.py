@@ -15,6 +15,7 @@ class _WorldState:
         self.height = 10
         self.walls = set()
         self.colors = {}
+        self.runtime_colors = {}
         self.temperature = {}
         self.radiation = {}
         self.discovered_sensors = set()

@@ -6,7 +6,7 @@ import threading
 import qtawesome as qta
 import websockets
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidgetItem, QPushButton, QWidget
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QListWidgetItem, QPushButton, QWidget
 
 
 class ServerMixin:
@@ -110,13 +110,13 @@ class ServerMixin:
                 try:
                     async with websockets.connect('ws://localhost:8766', ping_interval=None) as ws:
                         self._server_ws = ws
+                        await ws.send(json.dumps({'type': 'register_gui_app'}))
                         was_connected = True
                         self._connected_signal.emit()
 
                         async for message in ws:
                             if self._server_shutdown.is_set():
                                 break
-
                             try:
                                 data = json.loads(message)
                             except Exception:
@@ -202,6 +202,9 @@ class ServerMixin:
 
         t = data.get('type')
 
+        if t == 'register_gui_app_result':
+            return
+
         if t == 'snapshot':
             if getattr(self, '_needs_initial_push', False):
                 return
@@ -210,6 +213,7 @@ class ServerMixin:
             r = data.get('robot') or {}
             w = data.get('world') or {}
             hit_wall = data.get('hit_wall')
+            ack_id = data.get('ack_id')
 
             try:
                 if 'width' in w:
@@ -220,6 +224,7 @@ class ServerMixin:
                 pass
 
             world.colors.clear()
+            world.runtime_colors.clear()
             world.walls.clear()
             world.temperature.clear()
             world.radiation.clear()
@@ -233,6 +238,12 @@ class ServerMixin:
             for x, y, c in (w.get('colors') or []):
                 try:
                     world.colors[(int(x), int(y))] = str(c)
+                except Exception:
+                    pass
+
+            for x, y, c in (w.get('runtime_colors') or []):
+                try:
+                    world.runtime_colors[(int(x), int(y))] = str(c)
                 except Exception:
                     pass
 
@@ -279,6 +290,24 @@ class ServerMixin:
                     self._remember_saved_snapshot()
 
             self.update_scene()
+
+            try:
+                app = QApplication.instance()
+                if hasattr(self, 'view'):
+                    self.view.repaint()
+                    self.view.viewport().repaint()
+                self.repaint()
+                if app is not None:
+                    QApplication.sendPostedEvents()
+                    app.processEvents()
+                    QApplication.sendPostedEvents()
+                    app.processEvents()
+            except Exception:
+                pass
+
+            if ack_id:
+                self.send_to_server({'type': 'gui_snapshot_applied', 'ack_id': ack_id})
+
             return
 
         if t == 'sense_result':

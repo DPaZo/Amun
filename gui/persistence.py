@@ -136,6 +136,7 @@ class PersistenceMixin:
         self._current_world = name
         world.discovered_sensors.clear()
         world.discovered_colors.clear()
+        world.runtime_colors.clear()
 
         if hasattr(self, 'scene'):
             self.scene.hit_wall = None

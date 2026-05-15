@@ -37,6 +37,7 @@ class World:
         self.height = max(1, int(height))
         self.walls = set()
         self.colors = {}
+        self.runtime_colors = {}
         self.temperature = {}
         self.radiation = {}
 
@@ -92,15 +93,27 @@ class World:
     def in_bounds(self, x, y):
         return 0 <= x < self.width and 0 <= y < self.height
 
-    def set_color(self, x, y, color):
+    def set_color(self, x, y, color, runtime=False):
         x = int(x)
         y = int(y)
 
-        if self.in_bounds(x, y):
-            self.colors[(x, y)] = str(color)
+        if not self.in_bounds(x, y):
+            return
+
+        target = self.runtime_colors if runtime else self.colors
+        target[(x, y)] = str(color)
 
     def get_color(self, x, y):
-        return self.colors.get((int(x), int(y)), None)
+        key = (int(x), int(y))
+
+        if key in self.runtime_colors:
+            return self.runtime_colors[key]
+
+        return self.colors.get(key, None)
+
+    def has_color(self, x, y):
+        key = (int(x), int(y))
+        return key in self.runtime_colors or key in self.colors
 
     def set_temperature(self, x, y, value):
         x = int(x)
@@ -125,11 +138,12 @@ class World:
     def clear(self):
         self.walls.clear()
         self.colors.clear()
+        self.runtime_colors.clear()
         self.temperature.clear()
         self.radiation.clear()
 
-    def to_dict(self):
-        return {
+    def to_dict(self, include_runtime=False):
+        data = {
             'width': self.width,
             'height': self.height,
             'walls': [[x, y, d] for (x, y, d) in self.walls],
@@ -137,6 +151,11 @@ class World:
             'temperature': [[x, y, v] for (x, y), v in self.temperature.items()],
             'radiation': [[x, y, v] for (x, y), v in self.radiation.items()],
         }
+
+        if include_runtime:
+            data['runtime_colors'] = [[x, y, c] for (x, y), c in self.runtime_colors.items()]
+
+        return data
 
     def apply_dict(self, data):
         if 'width' in data:
@@ -151,6 +170,10 @@ class World:
         self.colors.clear()
         for x, y, c in (data.get('colors') or []):
             self.set_color(x, y, c)
+
+        self.runtime_colors.clear()
+        for x, y, c in (data.get('runtime_colors') or []):
+            self.set_color(x, y, c, runtime=True)
 
         self.temperature.clear()
         for x, y, v in (data.get('temperature') or []):

@@ -467,16 +467,59 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
 
         current = getattr(self, '_current_world', None)
 
-        if reload_current_world and current:
-            self.load_world(current)
-            return
-
         if self.edit_mode and not was_edit_mode:
+            world.runtime_colors.clear()
+            world.discovered_sensors.clear()
+            world.discovered_colors.clear()
+
+            if hasattr(self, 'scene'):
+                self.scene.hit_wall = None
+
+            saved = self._saved_snapshot or {}
+            saved_world = saved.get('world') or {}
+            saved_robot = saved.get('robot') or {}
+
+            if saved_world or saved_robot:
+                if saved_world:
+                    world.width = max(1, int(saved_world.get('width', world.width)))
+                    world.height = max(1, int(saved_world.get('height', world.height)))
+                    world.walls = {
+                        (int(x), int(y), str(d))
+                        for x, y, d in (saved_world.get('walls') or [])
+                    }
+                    world.colors = {
+                        (int(x), int(y)): self._normalize_color_value(c)
+                        for x, y, c in (saved_world.get('colors') or [])
+                    }
+                    world.temperature = {
+                        (int(x), int(y)): float(v)
+                        for x, y, v in (saved_world.get('temperature') or [])
+                    }
+                    world.radiation = {
+                        (int(x), int(y)): float(v)
+                        for x, y, v in (saved_world.get('radiation') or [])
+                    }
+
+                if saved_robot:
+                    robot.x = int(saved_robot.get('x', robot.x))
+                    robot.y = int(saved_robot.get('y', robot.y))
+                    robot.direction = str(saved_robot.get('direction', robot.direction)).upper()
+                    robot.alive = bool(saved_robot.get('alive', True))
+
+                self._prune_world_state_to_bounds()
+                self.update_scene()
+                self._save_local_state()
+                self._push_state_to_server()
+                return
+
             if current:
                 self.load_world(current)
                 return
 
-        self.update_scene()
+            self._mark_next_snapshot_saved = True
+            self.send_to_server({'type': 'reset', 'clear_world': True})
+            self.update_scene()
+            return
 
     def update_ui_for_mode(self):
         self.edit_actions.setVisible(self.edit_mode)
@@ -665,6 +708,7 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
 
         try:
             self.scene.rebuild()
+            self.scene.update()
             self.view.viewport().update()
 
             self.h_value_label.setText(f'{world.width}')
@@ -673,6 +717,14 @@ class MainWindow(BuildersMixin, PersistenceMixin, ServerMixin, ThemeMixin, QMain
             self.view.setFixedSize(world.width * CELL_SIZE + 2, world.height * CELL_SIZE + 2)
             self.h_controls.setFixedWidth(max(world.width * CELL_SIZE, 152))
             self.h_controls.updateGeometry()
+
+            self.repaint()
+            self.view.repaint()
+            self.view.viewport().repaint()
+            QApplication.sendPostedEvents()
+            QApplication.processEvents()
+            QApplication.sendPostedEvents()
+            QApplication.processEvents()
 
         except Exception as e:
             print(f'Error updating scene: {e}')

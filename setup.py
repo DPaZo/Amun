@@ -9,6 +9,13 @@ def module_name_from_path(path: Path) -> str:
     return ".".join(path.with_suffix("").parts)
 
 
+def extension_source_from_path(path: Path) -> str:
+    c_path = path.with_suffix(".c")
+    if c_path.exists():
+        return c_path.as_posix()
+    return path.as_posix()
+
+
 compiled_files = [
     Path("client/connection.py"),
     Path("client/robot.py"),
@@ -23,7 +30,7 @@ hidden_module_names = {module_name_from_path(path) for path in compiled_files}
 extensions = [
     Extension(
         module_name_from_path(path),
-        [path.as_posix()],
+        [extension_source_from_path(path)],
     )
     for path in compiled_files
 ]
@@ -44,8 +51,8 @@ class BuildPy(_build_py):
 
 setup(
     name="amun-robot",
-    version="0.1.2",
-    py_modules=["amun"],
+    version="0.1.3",
+    py_modules=["amun", "gui"],
     packages=find_packages(include=["client", "client.*", "server", "server.*", "gui", "gui.*"]),
     ext_modules=cythonize(
         extensions,

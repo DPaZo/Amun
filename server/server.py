@@ -23,13 +23,17 @@ STATE_DIR = get_worlds_dir()
 
 _loop = None
 _server_thread = None
+_run_future = None
 _robot_server = None
 _gui_server = None
+_robot_ws = None
 _gui_clients = set()
+_gui_app_clients = set()
 _shutdown_event = threading.Event()
 _state_lock = threading.Lock()
 _connection_lock = threading.Lock()
 _active_connection = False
+_pending_gui_snapshot_acks = {}
 connection_error = 'This server is already in use by another client'
 
 
@@ -157,6 +161,7 @@ def _load_world_file_by_path(path):
 
     w.walls.clear()
     w.colors.clear()
+    w.runtime_colors.clear()
     w.temperature.clear()
     w.radiation.clear()
 
@@ -251,7 +256,7 @@ def _make_snapshot():
         'type': 'snapshot',
         'ts': time.time(),
         'robot': robot.to_dict(),
-        'world': world.to_dict(),
+        'world': world.to_dict(include_runtime=True),
         'hit_wall': engine.get_last_hit_wall(),
     }
 
@@ -273,14 +278,48 @@ def _release_connection():
         _active_connection = False
 
 
+async def _broadcast_event_to_gui(event):
+    await _broadcast_all(json.dumps(event))
+
+
 def broadcast_to_gui(event):
     if _loop is None:
         return
 
     asyncio.run_coroutine_threadsafe(
-        _broadcast_all(json.dumps(event)),
+        _broadcast_event_to_gui(event),
         _loop,
     )
+
+
+def _resolve_gui_snapshot_ack(ack_id):
+    waiter = _pending_gui_snapshot_acks.get(str(ack_id or ''))
+    if waiter is None or waiter.done():
+        return
+
+    waiter.set_result(True)
+
+
+async def _broadcast_snapshot_to_gui_and_wait(snapshot, timeout=1.0):
+    if not _gui_app_clients:
+        return
+
+    ack_id = f'snapshot-{time.time_ns()}'
+    event = dict(snapshot)
+    event['ack_id'] = ack_id
+
+    loop = asyncio.get_running_loop()
+    waiter = loop.create_future()
+    _pending_gui_snapshot_acks[ack_id] = waiter
+
+    try:
+        await _broadcast_event_to_gui(event)
+        try:
+            await asyncio.wait_for(waiter, timeout=timeout)
+        except Exception:
+            pass
+    finally:
+        _pending_gui_snapshot_acks.pop(ack_id, None)
 
 
 async def _broadcast_all(message):
@@ -298,11 +337,14 @@ async def _broadcast_all(message):
 
 
 async def _robot_handler(websocket):
+    global _robot_ws
+
     if not _acquire_connection():
         await websocket.send(json.dumps({'type': 'error', 'message': connection_error}))
         await websocket.close()
         return
 
+    _robot_ws = websocket
     print('[server] program started')
     broadcast_to_gui({'type': 'program_started'})
 
@@ -322,30 +364,32 @@ async def _robot_handler(websocket):
             with _state_lock:
                 response = engine.handle_command(data)
 
-            await websocket.send(json.dumps(response))
-
             t = response.get('type', '')
 
             if t == 'reset_result':
-                broadcast_to_gui({'type': 'reset_result'})
+                await _broadcast_event_to_gui({'type': 'reset_result'})
 
             if t == 'sense_result':
-                broadcast_to_gui(response)
+                await _broadcast_event_to_gui(response)
 
             if t in ('move_result', 'paint_result', 'sense_result', 'bool_result', 'reset_result'):
-                broadcast_to_gui(_make_snapshot())
+                await _broadcast_snapshot_to_gui_and_wait(_make_snapshot())
 
             if t == 'stop_result':
-                broadcast_to_gui({'type': 'program_stopped'})
+                await _broadcast_event_to_gui({'type': 'program_stopped'})
 
             if t == 'error':
-                broadcast_to_gui(response)
+                await _broadcast_event_to_gui(response)
+
+            await websocket.send(json.dumps(response))
 
     except websockets.ConnectionClosed:
         pass
     except OSError as e:
         print(f'[server] robot handler error: {e}')
     finally:
+        if _robot_ws is websocket:
+            _robot_ws = None
         _release_connection()
         print('[server] program finished')
         broadcast_to_gui({'type': 'program_finished'})
@@ -353,7 +397,7 @@ async def _robot_handler(websocket):
 
 async def _gui_handler(websocket):
     _gui_clients.add(websocket)
-    print('[server] GUI client connected')
+    is_gui_app = False
 
     await websocket.send(json.dumps(_make_snapshot()))
 
@@ -414,6 +458,22 @@ async def _gui_handler(websocket):
                 files = _get_world_list()
                 await websocket.send(json.dumps({'type': 'world_list', 'files': files}))
 
+
+            elif t == 'get_runtime_status':
+                await websocket.send(json.dumps({
+                    'type': 'runtime_status',
+                    'gui_clients': len(_gui_clients),
+                    'gui_app_clients': len(_gui_app_clients),
+                    'robot_connected': _robot_ws is not None,
+                }))
+
+            elif t == 'register_gui_app':
+                if not is_gui_app:
+                    is_gui_app = True
+                    print('[server] GUI client connected')
+                _gui_app_clients.add(websocket)
+                await websocket.send(json.dumps({'type': 'register_gui_app_result', 'ok': True}))
+
             elif t == 'delete_world':
                 name = _normalize_world_name(data.get('name') or '')
                 if not name:
@@ -434,8 +494,12 @@ async def _gui_handler(websocket):
                 except (OSError, ValueError) as e:
                     await websocket.send(json.dumps({'type': 'error', 'message': str(e)}))
 
+
             elif t == 'set_edit_mode':
                 broadcast_to_gui({'type': 'set_edit_mode', 'value': bool(data.get('value', False))})
+
+            elif t == 'gui_snapshot_applied':
+                _resolve_gui_snapshot_ack(data.get('ack_id'))
 
     except websockets.ConnectionClosed:
         pass
@@ -443,8 +507,10 @@ async def _gui_handler(websocket):
         print(f'[server] GUI handler error: {e}')
     finally:
         _gui_clients.discard(websocket)
-        print('[server] GUI client disconnected')
-
+        was_gui_app = is_gui_app or (websocket in _gui_app_clients)
+        _gui_app_clients.discard(websocket)
+        if was_gui_app:
+            print('[server] GUI client disconnected')
 
 async def _run():
     global _robot_server, _gui_server
@@ -474,7 +540,7 @@ async def _run():
 
 
 def start():
-    global _loop, _server_thread
+    global _loop, _server_thread, _run_future
 
     if _loop and _server_thread and _server_thread.is_alive():
         return
@@ -488,11 +554,11 @@ def start():
     _server_thread = threading.Thread(target=_loop.run_forever, daemon=True)
     _server_thread.start()
 
-    future = asyncio.run_coroutine_threadsafe(_run(), _loop)
+    _run_future = asyncio.run_coroutine_threadsafe(_run(), _loop)
     time.sleep(0.2)
 
     try:
-        future.result(timeout=0.2)
+        _run_future.result(timeout=0.2)
     except concurrent.futures.TimeoutError:
         print('[server] started')
         return
@@ -503,45 +569,59 @@ def start():
             _server_thread.join(timeout=1)
         _loop = None
         _server_thread = None
+        _run_future = None
         raise
 
     print('[server] started')
 
 
 def stop():
-    global _loop, _server_thread, _robot_server, _gui_server, _active_connection
+    global _loop, _server_thread, _run_future, _robot_server, _gui_server, _robot_ws, _active_connection
 
     _shutdown_event.set()
     logger.close()
 
-    if _robot_server and _loop:
-        _loop.call_soon_threadsafe(_robot_server.close)
-
-    if _gui_server and _loop:
-        _loop.call_soon_threadsafe(_gui_server.close)
-
     if _loop:
         close_futures = []
+
+        if _robot_ws is not None:
+            close_futures.append(asyncio.run_coroutine_threadsafe(_robot_ws.close(), _loop))
+
         for ws in list(_gui_clients):
             close_futures.append(asyncio.run_coroutine_threadsafe(ws.close(), _loop))
 
+        if _robot_server:
+            _loop.call_soon_threadsafe(_robot_server.close)
+
+        if _gui_server:
+            _loop.call_soon_threadsafe(_gui_server.close)
+
         for future in close_futures:
             try:
-                future.result(timeout=0.5)
+                future.result(timeout=1)
+            except Exception:
+                pass
+
+        if _run_future is not None:
+            try:
+                _run_future.result(timeout=2)
             except Exception:
                 pass
 
         _loop.call_soon_threadsafe(_loop.stop)
 
     if _server_thread and _server_thread.is_alive():
-        _server_thread.join(timeout=1)
+        _server_thread.join(timeout=2)
 
     with _connection_lock:
         _active_connection = False
 
     _gui_clients.clear()
+    _gui_app_clients.clear()
+    _robot_ws = None
     _robot_server = None
     _gui_server = None
+    _run_future = None
     _loop = None
     _server_thread = None
 

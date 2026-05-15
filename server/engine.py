@@ -111,7 +111,7 @@ def set_baseline_from_current():
     if _world is None or _robot is None:
         return
 
-    _baseline_world = _world.to_dict()
+    _baseline_world = _world.to_dict(include_runtime=False)
     _baseline_robot = {
         'x': _robot.start_x,
         'y': _robot.start_y,
@@ -220,7 +220,7 @@ def _cmd_paint(data):
     if not color:
         return {'type': 'error', 'message': 'Color must not be empty'}
 
-    _world.set_color(_robot.x, _robot.y, color)
+    _world.set_color(_robot.x, _robot.y, color, runtime=True)
 
     logger.log_paint(_robot.x, _robot.y, color)
     message_list.add({'type': 'paint', 'x': _robot.x, 'y': _robot.y, 'color': color})
@@ -253,7 +253,7 @@ def _cmd_sense_color():
 
 
 def _cmd_has_color():
-    result = (_robot.x, _robot.y) in _world.colors
+    result = _world.has_color(_robot.x, _robot.y)
     return {'type': 'bool_result', 'command': 'has_color', 'value': result}
 
 
@@ -308,7 +308,7 @@ def _cmd_reset(data):
         'type': 'reset_result',
         'ok': True,
         'robot': _robot.to_dict(),
-        'world': _world.to_dict(),
+        'world': _world.to_dict(include_runtime=True),
     }
 
 
@@ -317,7 +317,7 @@ def _cmd_snapshot():
         'type': 'snapshot',
         'ts': time.time(),
         'robot': _robot.to_dict(),
-        'world': _world.to_dict(),
+        'world': _world.to_dict(include_runtime=True),
         'hit_wall': get_last_hit_wall(),
     }
 
