@@ -140,16 +140,16 @@ Use the predefined constants, such as `EAST` and `RED`, rather than quoted strin
 
 Bug reports and suggestions are welcome. Before submitting code, please read the project license and confirm that your contribution can be shared under the same noncommercial terms. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
 
-## License and commercial use
 
-Amun is provided under the **PolyForm Noncommercial License 1.0.0**. You may use, modify, and redistribute the software for permitted noncommercial purposes, subject to the license terms.
+## License and Commercial Use
 
-Commercial use, including selling Amun or a modified version, is not permitted without separate written permission from the copyright holder.
+Amun is provided under the **PolyForm Noncommercial License 1.0.0**.
 
-The license does **not** require every private modification to be published. If you want a legal obligation that distributed modified versions must also publish their source code, that requires a different or additional licensing approach and should be reviewed before release.
+You may use, modify, and redistribute Amun for permitted noncommercial purposes, subject to the full terms in [`LICENSE`](LICENSE).
 
-Read the complete terms in [`LICENSE`](LICENSE) or at <https://polyformproject.org/licenses/noncommercial/1.0.0/>.
+**The project maintainer does not offer separate commercial licenses.** Commercial use is not permitted under the license, subject to its specific terms and exceptions. The license does not require you to publish private modifications.
 
----
+Read [`LICENSE`](LICENSE) or the [official PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/).
 
-Amun is an educational simulator; it does not control a physical robot.
+Amun is source-available software, not an OSI-approved open-source project, because its license restricts commercial use.
+
