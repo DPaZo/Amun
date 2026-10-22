@@ -71,7 +71,7 @@ def main():
     paint(BLUE)
 
 
-    amun.run(main)
+amun.run(main)
 ```
 
 Run `main.py` from PyCharm. Amun launches its environment and executes `main()`. The robot moves east, paints a cell red, moves south, and paints another cell blue. The exact visible result depends on the current world configuration.
